@@ -37,6 +37,10 @@ matrix:
     - python: "2.7"
       env: DJANGO_VERSION=dj21
 
+branches:
+  only:
+    - T2479
+
 addons:
   apt:
     packages:
