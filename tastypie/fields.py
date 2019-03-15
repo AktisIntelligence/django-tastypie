@@ -8,6 +8,7 @@ import importlib
 
 from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned
 from django.db import models
+from django.db.utils import IntegrityError
 try:
     from django.db.models.fields.related import\
         SingleRelatedObjectDescriptor as ReverseOneToOneDescriptor
@@ -198,8 +199,12 @@ class ApiField(object):
                 return None
 
             raise ApiFieldError("The '%s' field has no data and doesn't allow a default or null value." % self.instance_name)
+        else:
+            value = bundle.data[self.instance_name]
+            if value is None and not self.null:
+                raise IntegrityError("Column '%s' cannot be null." % self.instance_name)
 
-        return bundle.data[self.instance_name]
+            return value
 
 
 class CharField(ApiField):
