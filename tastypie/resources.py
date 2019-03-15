@@ -958,27 +958,27 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
                 if isinstance(value, Bundle) and value.errors.get(field_name):
                     bundle.errors[field_name] = value.errors[field_name]
 
-                if value is not None or field_object.null:
-                    # We need to avoid populating M2M data here as that will
-                    # cause things to blow up.
-                    if not field_object.is_related:
-                        setattr(bundle.obj, field_object.attribute, value)
-                    elif not field_object.is_m2m:
-                        if value is not None:
-                            # NOTE: A bug fix in Django (ticket #18153) fixes incorrect behavior
-                            # which Tastypie was relying on.  To fix this, we store value.obj to
-                            # be saved later in save_related.
-                            try:
-                                setattr(bundle.obj, field_object.attribute, value.obj)
-                            except (ValueError, ObjectDoesNotExist):
-                                bundle.related_objects_to_save[field_object.attribute] = value.obj
-                        # not required, not sent
-                        elif field_object.blank and field_name not in bundle.data:
-                            continue
-                        elif field_object.null:
-                            if not isinstance(getattr(bundle.obj.__class__, field_object.attribute, None), ReverseOneToOneDescriptor):
-                                # only update if not a reverse one to one field
-                                setattr(bundle.obj, field_object.attribute, value)
+                # We need to avoid populating M2M data here as that will
+                # cause things to blow up.
+                if not field_object.is_related:
+                    setattr(bundle.obj, field_object.attribute, value)
+                elif not field_object.is_m2m:
+                    if value is not None:
+                        # NOTE: A bug fix in Django (ticket #18153) fixes incorrect behavior
+                        # which Tastypie was relying on.  To fix this, we store value.obj to
+                        # be saved later in save_related.
+                        try:
+                            setattr(bundle.obj, field_object.attribute, value.obj)
+                        except (ValueError, ObjectDoesNotExist):
+                            bundle.related_objects_to_save[field_object.attribute] = value.obj
+                    # not required, not sent
+                    elif field_object.blank and field_name not in bundle.data:
+                        continue
+                    elif field_object.null:
+                        if not isinstance(getattr(bundle.obj.__class__, field_object.attribute, None),
+                                          ReverseOneToOneDescriptor):
+                            # only update if not a reverse one to one field
+                            setattr(bundle.obj, field_object.attribute, value)
 
         return bundle
 
