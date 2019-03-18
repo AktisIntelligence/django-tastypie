@@ -1,5 +1,5 @@
-*.pyc
-.DS_Store
+**/*.DS_Store
+**/*.pyc
 _build
 .*.sw[po]
 *.egg-info
@@ -11,3 +11,4 @@ tests/tastypie.db
 .tox
 env
 env3
+.vscode
