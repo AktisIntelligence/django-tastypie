@@ -201,8 +201,8 @@ class ApiField(object):
             raise ApiFieldError("The '%s' field has no data and doesn't allow a default or null value." % self.instance_name)
         else:
             value = bundle.data[self.instance_name]
-            if value is None and not self.null:
-                raise IntegrityError("Column '%s' cannot be null." % self.instance_name)
+            if value is None and self.null is not True:
+                raise ApiFieldError(IntegrityError("Column '%s' cannot be null." % self.instance_name))
 
             return value
 
