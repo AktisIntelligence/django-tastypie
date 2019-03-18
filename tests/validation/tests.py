@@ -90,14 +90,37 @@ class PutDetailNestResouceValidationTestCase(TestCaseWithFixture):
         resp = self.client.put('/api/v1/notes/1/', data=data, content_type='application/json')
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(json.loads(resp.content.decode('utf-8')), {
-            'notes': {
-                'slug': ['This field is required.'],
-                'title': ['This field is required.']
-            },
-            'annotated': {
-                'annotations': ['This field is required.']
-            }
+            'error': 'Column \'annotations\' cannot be null.'
         })
+
+    def test_no_nested_data(self):
+        """
+        Since annotated is is set to `null=True` in the `NoteResource` it is fine to not send it
+        """
+        data = json.dumps({
+            'title': 'Test Title No Annotation',
+            'slug': 'test-title-no-annotation',
+            'content': 'This is the content without annotation',
+            'annotated': None,
+        })
+
+        resp = self.client.put('/api/v1/notes/1/', data=data, content_type='application/json')
+        self.assertEqual(resp.status_code, 204)
+        note = json.loads(self.client.get('/api/v1/notes/1/', content_type='application/json').content.decode('utf-8'))
+        self.assertIsNone(note['annotated'])
+        self.assertEqual('test-title-no-annotation', note['slug'])
+
+        data = json.dumps({
+            'title': 'Test Title No Annotation 2',
+            'slug': 'test-title-no-annotation-2',
+            'content': 'This is the content without annotation 2',
+        })
+
+        resp = self.client.put('/api/v1/notes/1/', data=data, content_type='application/json')
+        self.assertEqual(resp.status_code, 204)
+        note = json.loads(self.client.get('/api/v1/notes/1/', content_type='application/json').content.decode('utf-8'))
+        self.assertIsNone(note['annotated'])
+        self.assertEqual('test-title-no-annotation-2', note['slug'])
 
 
 class PutListNestResouceValidationTestCase(TestCaseWithFixture):
@@ -151,10 +174,62 @@ class PutListNestResouceValidationTestCase(TestCaseWithFixture):
         resp = self.client.put('/api/v1/notes/', data=data, content_type='application/json')
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(json.loads(resp.content.decode('utf-8')), {
-            'notes': {
-                'content': ['This field is required.']
-            },
-            'annotated': {
-                'annotations': ['This field is required.']
-            }
+            'error': 'Column \'annotations\' cannot be null.'
         })
+
+    def test_no_nested_data(self):
+        """
+        Since annotated is is set to `null=True` in the `NoteResource` it is fine to not send it
+        """
+        data = json.dumps({'objects': [
+            {
+                'id': 1,
+                'title': 'Test Title',
+                'slug': 'test-title',
+                'content': 'This is the content',
+                'annotated': None,
+                'user': {'id': 1}
+            },
+            {
+                'id': 2,
+                'title': 'Test Title',
+                'slug': 'test-title',
+                'content': 'This is the content',
+                'annotated': {'annotations': 'This is the third annotations'},
+                'user': {'id': 1}
+            }
+
+        ]})
+
+        resp = self.client.put('/api/v1/notes/', data=data, content_type='application/json')
+        self.assertEqual(resp.status_code, 204)
+        note = json.loads(self.client.get('/api/v1/notes/1/', content_type='application/json').content.decode('utf-8'))
+        self.assertIsNone(note['annotated'])
+        note = json.loads(self.client.get('/api/v1/notes/2/', content_type='application/json').content.decode('utf-8'))
+        self.assertTrue(note['annotated'])
+
+        data = json.dumps({'objects': [
+            {
+                'id': 1,
+                'title': 'Test Title',
+                'slug': 'test-title',
+                'content': 'This is the content',
+                'annotated': {'annotations': 'This is another annotations'},
+                'user': {'id': 1}
+            },
+            {
+                'id': 2,
+                'title': 'Test Title',
+                'slug': 'test-title',
+                'content': 'This is the content',
+                'user': {'id': 1}
+            }
+
+        ]})
+
+        resp = self.client.put('/api/v1/notes/', data=data, content_type='application/json')
+        self.assertEqual(resp.status_code, 204)
+        note = json.loads(self.client.get('/api/v1/notes/1/', content_type='application/json').content.decode('utf-8'))
+        self.assertTrue(note['annotated'])
+        note = json.loads(self.client.get('/api/v1/notes/2/', content_type='application/json').content.decode('utf-8'))
+        self.assertIsNone(note['annotated'])
