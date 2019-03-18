@@ -6,12 +6,15 @@ from related_resource.api.resources import NoteResource, UserResource,\
     ForumResource, CompanyResource, ProductResource, AddressResource,\
     PersonResource, DogResource, DogHouseResource, BoneResource,\
     LabelResource, PostResource, OrderResource, OrderItemResource,\
-    NoteWithUpdatableUserResource, ContactResource, ContactGroupResource
+    NoteWithUpdatableUserResource, ContactResource, ContactGroupResource,\
+    NoteWithEditorResource, NoteWithEditorWithUpdatableUserResource
 
 
 api = Api(api_name='v1')
 api.register(NoteResource(), canonical=True)
 api.register(NoteWithUpdatableUserResource(), canonical=True)
+api.register(NoteWithEditorResource(), canonical=True)
+api.register(NoteWithEditorWithUpdatableUserResource(), canonical=True)
 api.register(UserResource(), canonical=True)
 api.register(CategoryResource(), canonical=True)
 api.register(TagResource(), canonical=True)

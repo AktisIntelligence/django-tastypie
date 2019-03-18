@@ -4,7 +4,7 @@ from tastypie import fields
 from tastypie.resources import ModelResource
 from tastypie.authorization import Authorization
 
-from core.models import Note, MediaBit
+from core.models import Note, MediaBit, NoteWithEditor
 
 from related_resource.models import Bone, Category, Contact, ContactGroup,\
     ExtraData, Person, Company, Product, Address, Dog, DogHouse, Forum,\
@@ -28,7 +28,7 @@ class UpdatableUserResource(ModelResource):
 
 
 class NoteResource(ModelResource):
-    author = fields.ForeignKey(UserResource, 'author')
+    author = fields.ForeignKey(UserResource, 'author', null=True)
 
     class Meta:
         resource_name = 'notes'
@@ -37,11 +37,31 @@ class NoteResource(ModelResource):
 
 
 class NoteWithUpdatableUserResource(ModelResource):
-    author = fields.ForeignKey(UpdatableUserResource, 'author')
+    author = fields.ForeignKey(UpdatableUserResource, 'author', null=True)
 
     class Meta:
         resource_name = 'noteswithupdatableuser'
         queryset = Note.objects.all()
+        authorization = Authorization()
+
+
+class NoteWithEditorResource(ModelResource):
+    author = fields.ForeignKey(UserResource, 'author', null=True)
+    editor = fields.ForeignKey(UpdatableUserResource, 'editor')
+
+    class Meta:
+        resource_name = 'noteswitheditor'
+        queryset = NoteWithEditor.objects.all()
+        authorization = Authorization()
+
+
+class NoteWithEditorWithUpdatableUserResource(ModelResource):
+    author = fields.ForeignKey(UpdatableUserResource, 'author', null=True)
+    editor = fields.ForeignKey(UpdatableUserResource, 'editor')
+
+    class Meta:
+        resource_name = 'noteswitheditorwithupdatableuser'
+        queryset = NoteWithEditor.objects.all()
         authorization = Authorization()
 
 

@@ -10,7 +10,7 @@ from django.test.testcases import TestCase
 from tastypie import fields
 from tastypie.exceptions import ApiFieldError, NotFound
 
-from core.models import Note, MediaBit
+from core.models import MediaBit, Note, NoteWithEditor
 from core.tests.mocks import MockRequest
 
 from related_resource.api.resources import AddressResource, CategoryResource,\
@@ -86,6 +86,87 @@ class RelatedResourceTest(TestCaseWithFixture):
         resp = resource.post_list(request)
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(User.objects.get(id=self.user.id).username, 'foobar')
+
+    def test_related_resource_nullable_or_not(self):
+        """
+        Test POST method with related resources that are nullable (author) or not (editor)
+        """
+        nb_notes = NoteWithEditor.objects.count()
+        resource = api.canonical_resource_for('noteswitheditor')
+        request = MockRequest()
+        request.GET = {'format': 'json'}
+        request.method = 'POST'
+
+        # Should fail because the 'editor' field is not specified
+        data = {
+            "content": "The cat is back. The dog coughed him up out back.",
+            "created": "2010-04-03 20:05:00",
+            "is_active": True,
+            "slug": "cat-is-back",
+            "title": "The Cat Is Back",
+            "updated": "2010-04-03 20:05:00",
+        }
+        request.set_body(json.dumps(data))
+        resp = resource.wrap_view('dispatch_list')(request)
+        self.assertEqual(resp.status_code, 400)
+        content = json.loads(resp.content.decode('utf-8'))
+        self.assertIn("error", content)
+        self.assertEqual(content["error"], "The 'editor' field has no data and doesn't allow a default or null value.")
+        self.assertEqual(NoteWithEditor.objects.count(), nb_notes)
+
+        # Should fail because the 'editor' field is specified but with no value
+        data["editor"] = None
+        request.set_body(json.dumps(data))
+        resp = resource.wrap_view('dispatch_list')(request)
+        self.assertEqual(resp.status_code, 400)
+        content = json.loads(resp.content.decode('utf-8'))
+        self.assertIn("error", content)
+        self.assertEqual(content["error"], "Column 'editor' cannot be null.")
+        self.assertEqual(NoteWithEditor.objects.count(), nb_notes)
+
+        # Should pass even though the 'author' field is not specified
+        data["editor"] = {"id": self.user.id, "username": "Mr Potato"}
+        request.set_body(json.dumps(data))
+        resp = resource.wrap_view('dispatch_list')(request)
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(NoteWithEditor.objects.count(), nb_notes + 1)
+        nb_notes += 1
+
+        # Should pass even though the 'author' field is specified and null
+        data["author"] = None
+        request.set_body(json.dumps(data))
+        resp = resource.wrap_view('dispatch_list')(request)
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(NoteWithEditor.objects.count(), nb_notes + 1)
+        nb_notes += 1
+
+        # Should pass when the 'author' field is specified with a value
+        data["author"] = {"id": self.user.id, "username": "Ms Banana"}
+        request.set_body(json.dumps(data))
+        resp = resource.wrap_view('dispatch_list')(request)
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(NoteWithEditor.objects.count(), nb_notes + 1)
+        nb_notes += 1
+
+        # Should fail because the 'slug' field is specified but with no value
+        data["slug"] = None
+        request.set_body(json.dumps(data))
+        resp = resource.wrap_view('dispatch_list')(request)
+        self.assertEqual(resp.status_code, 400)
+        content = json.loads(resp.content.decode('utf-8'))
+        self.assertIn("error", content)
+        self.assertEqual(content["error"], "Column 'slug' cannot be null.")
+        self.assertEqual(NoteWithEditor.objects.count(), nb_notes)
+
+        # Should not fail because the 'slug' field is not specified but has a default value
+        # (even thought the default value is not explicitly declared, Django default TextField, CharField, SlugField to
+        # an empty string which is not considered as a null value)
+        del data["slug"]
+        request.set_body(json.dumps(data))
+        resp = resource.wrap_view('dispatch_list')(request)
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(NoteWithEditor.objects.count(), nb_notes + 1)
+        nb_notes += 1
 
     def test_ok_not_null_field_included(self):
         """
