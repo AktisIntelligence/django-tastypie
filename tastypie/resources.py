@@ -1334,6 +1334,9 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         paginator = self._meta.paginator_class(request.GET, sorted_objects, resource_uri=self.get_resource_uri(), limit=self._meta.limit, max_limit=self._meta.max_limit, collection_name=self._meta.collection_name)
         to_be_serialized = paginator.page()
 
+        # Use this to avoid N+1 queries.
+        self.get_extra_data_for_objects(to_be_serialized[self._meta.collection_name])
+
         # Dehydrate the bundles in preparation for serialization.
         bundles = [
             self.full_dehydrate(self.build_bundle(obj=obj, request=request), for_list=True)
@@ -1361,6 +1364,8 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
             return http.HttpNotFound()
         except MultipleObjectsReturned:
             return http.HttpMultipleChoices("More than one resource is found at this URI.")
+
+        self.get_extra_data_for_objects([obj])
 
         bundle = self.build_bundle(obj=obj, request=request)
         bundle = self.full_dehydrate(bundle)
@@ -1760,6 +1765,19 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         self.log_throttled_access(request)
         return self.create_response(request, object_list)
 
+    def obj_get_extra_data(self, objects, request=None, **kwargs):
+        """
+        Use this function in resources to fetch any additional data you might need.
+        Note that this gets called BEFORE pagination so may not be ideal if you want to get a set of data based on
+        the objects which will actually be returned.
+        """
+        pass
+
+    def get_extra_data_for_objects(self, objects):
+        """
+        The same as above but allows us to do extra data fetching for only the objects that will be serialised.
+        """
+        pass
 
 class ModelDeclarativeMetaclass(DeclarativeMetaclass):
     def __new__(cls, name, bases, attrs):
@@ -2128,7 +2146,9 @@ class BaseModelResource(Resource):
 
         try:
             objects = self.apply_filters(bundle.request, applicable_filters)
-            return self.authorized_read_list(objects, bundle)
+            authorized_objects = self.authorized_read_list(objects, bundle)
+            self.obj_get_extra_data(authorized_objects, request=bundle.request)
+            return authorized_objects
         except ValueError:
             raise BadRequest("Invalid resource lookup data provided (mismatched type).")
 
@@ -2158,6 +2178,7 @@ class BaseModelResource(Resource):
 
             bundle.obj = object_list[0]
             self.authorized_read_detail(object_list, bundle)
+            self.obj_get_extra_data([bundle.obj], request=bundle.request)
             return bundle.obj
         except ValueError:
             raise NotFound("Invalid resource lookup data provided (mismatched type).")
