@@ -81,7 +81,7 @@ def is_valid_javascript_identifier(identifier, escape=r'\\u',
             if len(segment) < 4:
                 return False
             try:
-                add_char(unichr(int('0x' + segment[:4], 16)))
+                add_char(six.unichr(int('0x' + segment[:4], 16)))
             except Exception:
                 return False
             add_char(segment[4:])
@@ -93,13 +93,13 @@ def is_valid_javascript_identifier(identifier, escape=r'\\u',
 
     first_char = identifier[0]
 
-    if not ((first_char in valid_jsid_chars) or
-            (ucd_cat(first_char) in valid_jsid_categories_start)):
+    if not ((first_char in valid_jsid_chars)
+            or (ucd_cat(first_char) in valid_jsid_categories_start)):
         return False
 
     for char in identifier[1:]:
-        if not ((char in valid_jsid_chars) or
-                (ucd_cat(char) in valid_jsid_categories)):
+        if not ((char in valid_jsid_chars)
+                or (ucd_cat(char) in valid_jsid_categories)):
             return False
 
     return True
@@ -207,6 +207,7 @@ def test():
     Enjoy!
 
     """
+
 
 if __name__ == '__main__':
     import doctest

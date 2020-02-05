@@ -3,9 +3,13 @@ import json
 
 import django
 from django.contrib.auth.models import User
-from django.core.urlresolvers import reverse
+try:
+    from django.urls import reverse
+except ImportError:
+    from django.core.urlresolvers import reverse
 from django.db.models.signals import pre_save
 from django.test.testcases import TestCase
+from django.test.utils import override_settings
 
 from tastypie import fields
 from tastypie.exceptions import ApiFieldError, NotFound
@@ -48,9 +52,8 @@ class M2MResourcesTestCase(TestCaseWithFixture):
         self.assertEqual(len(data['members']), 1)
 
 
+@override_settings(ROOT_URLCONF='related_resource.api.urls')
 class RelatedResourceTest(TestCaseWithFixture):
-    urls = 'related_resource.api.urls'
-
     def setUp(self):
         super(RelatedResourceTest, self).setUp()
         self.user = User.objects.create(username="testy_mctesterson")
@@ -202,9 +205,8 @@ class RelatedResourceTest(TestCaseWithFixture):
             resource.post_list(request)
 
 
+@override_settings(ROOT_URLCONF='related_resource.api.urls')
 class CategoryResourceTest(TestCaseWithFixture):
-    urls = 'related_resource.api.urls'
-
     def setUp(self):
         super(CategoryResourceTest, self).setUp()
         self.parent_cat_1 = Category.objects.create(parent=None, name='Dad')
@@ -249,9 +251,8 @@ class CategoryResourceTest(TestCaseWithFixture):
         self.assertEqual(Category.objects.get(pk=self.child_cat_1.pk).parent, None)
 
 
+@override_settings(ROOT_URLCONF='related_resource.api.urls')
 class ExplicitM2MResourceRegressionTest(TestCaseWithFixture):
-    urls = 'related_resource.api.urls'
-
     def setUp(self):
         super(ExplicitM2MResourceRegressionTest, self).setUp()
         self.tag_1 = Tag.objects.create(name='important')
@@ -315,9 +316,8 @@ class ExplicitM2MResourceRegressionTest(TestCaseWithFixture):
         self.assertEqual(deserialized['name'], 'school')
 
 
+@override_settings(ROOT_URLCONF='related_resource.api.urls')
 class OneToManySetupTestCase(TestCaseWithFixture):
-    urls = 'related_resource.api.urls'
-
     def test_one_to_many(self):
         # Sanity checks.
         self.assertEqual(Note.objects.count(), 2)
@@ -397,9 +397,8 @@ class RelationshipOppositeFromModelTestCase(TestCaseWithFixture):
         self.assertEqual(new_job, new_payment.job)
 
 
+@override_settings(ROOT_URLCONF='related_resource.api.urls')
 class RelatedPatchTestCase(TestCaseWithFixture):
-    urls = 'related_resource.api.urls'
-
     def test_patch_to_one(self):
         resource = FullCategoryResource()
         cat1 = Category.objects.create(name='Dad')
@@ -497,9 +496,8 @@ class RelatedPatchTestCase(TestCaseWithFixture):
         self.assertEqual(user2.password, 'this_is_not_a_valid_password_string')
 
 
+@override_settings(ROOT_URLCONF='related_resource.api.urls')
 class NestedRelatedResourceTest(TestCaseWithFixture):
-    urls = 'related_resource.api.urls'
-
     def test_one_to_one(self):
         """
         Test a related ToOne resource with a nested full ToOne resource
@@ -837,9 +835,8 @@ class NestedRelatedResourceTest(TestCaseWithFixture):
         self.assertEqual(bone.color, 'gray')
 
 
+@override_settings(ROOT_URLCONF='related_resource.api.urls')
 class RelatedSaveCallsTest(TestCaseWithFixture):
-    urls = 'related_resource.api.urls'
-
     def test_one_query_for_post_list(self):
         """
         Posting a new detail with no related objects
@@ -1041,13 +1038,12 @@ class RelatedSaveCallsTest(TestCaseWithFixture):
         self.assertEqual(list(new_cg2.members.all()), [new_c2])
 
 
+@override_settings(ROOT_URLCONF='related_resource.api.urls')
 class CorrectUriRelationsTestCase(TestCaseWithFixture):
     """
     Validate that incorrect URI (with PKs that line up to valid data) are not
     accepted.
     """
-    urls = 'related_resource.api.urls'
-
     def test_incorrect_uri(self):
         self.assertEqual(Note.objects.count(), 2)
         nr = NoteResource()

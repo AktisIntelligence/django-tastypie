@@ -1,6 +1,6 @@
 from __future__ import unicode_literals
 
-from copy import deepcopy
+from copy import copy, deepcopy
 from datetime import datetime
 import logging
 import sys
@@ -9,17 +9,14 @@ import traceback
 import warnings
 from wsgiref.handlers import format_date_time
 
-import django
 from django.conf import settings
 from django.conf.urls import url
 from django.core.exceptions import (
-    ObjectDoesNotExist, MultipleObjectsReturned, ValidationError,
-)
-from django.core.urlresolvers import (
-    NoReverseMatch, reverse, Resolver404, get_script_prefix
+    ObjectDoesNotExist, MultipleObjectsReturned, ValidationError, FieldDoesNotExist
 )
 from django.core.signals import got_request_exception
 from django.core.exceptions import ImproperlyConfigured
+from django.db.models.fields.related import ForeignKey
 try:
     from django.contrib.gis.db.models.fields import GeometryField
 except (ImproperlyConfigured, ImportError):
@@ -31,7 +28,7 @@ try:
 except ImportError:
     from django.db.models.fields.related_descriptors import\
         ReverseOneToOneDescriptor
-from django.db.models.sql.constants import QUERY_TERMS
+
 from django.http import HttpResponse, HttpResponseNotFound, Http404
 from django.utils import six
 from django.utils.cache import patch_cache_control, patch_vary_headers
@@ -42,10 +39,12 @@ from tastypie.authentication import Authentication
 from tastypie.authorization import ReadOnlyAuthorization
 from tastypie.bundle import Bundle
 from tastypie.cache import NoCache
+from tastypie.compat import NoReverseMatch, reverse, Resolver404, get_script_prefix
 from tastypie.constants import ALL, ALL_WITH_RELATIONS
 from tastypie.exceptions import (
     NotFound, BadRequest, InvalidFilterError, HydrationError, InvalidSortError,
     ImmediateHttpResponse, Unauthorized, UnsupportedFormat,
+    UnsupportedSerializationFormat, UnsupportedDeserializationFormat,
 )
 from tastypie import fields
 from tastypie import http
@@ -94,7 +93,7 @@ class ResourceOptions(object):
     ordering = []
     object_class = None
     queryset = None
-    fields = []
+    fields = None
     excludes = []
     include_resource_uri = True
     include_absolute_url = False
@@ -155,6 +154,7 @@ class DeclarativeMetaclass(type):
         new_class = super(DeclarativeMetaclass, cls).__new__(cls, name, bases, attrs)
         opts = getattr(new_class, 'Meta', None)
         new_class._meta = ResourceOptions(opts)
+        abstract = getattr(new_class._meta, 'abstract', False)
 
         if not getattr(new_class._meta, 'resource_name', None):
             # No ``resource_name`` provided. Attempt to auto-name the resource.
@@ -168,6 +168,11 @@ class DeclarativeMetaclass(type):
                 new_class.base_fields['resource_uri'] = fields.CharField(readonly=True, verbose_name="resource uri")
         elif 'resource_uri' in new_class.base_fields and 'resource_uri' not in attrs:
             del(new_class.base_fields['resource_uri'])
+
+        if abstract and 'resource_uri' not in attrs:
+            # abstract classes don't have resource_uris unless explicitly provided
+            if 'resource_uri' in new_class.base_fields:
+                del(new_class.base_fields['resource_uri'])
 
         for field_name, field_object in new_class.base_fields.items():
             if hasattr(field_object, 'contribute_to_class'):
@@ -192,12 +197,14 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         # TypeError: object.__new__(method-wrapper) is not safe, use method-wrapper.__new__()
         # when trying to copy a generator used as a default. Wrap call to
         # generator in lambda to get around this error.
-        self.fields = deepcopy(self.base_fields)
+        self.fields = {k: copy(v) for k, v in self.base_fields.items()}
 
         if api_name is not None:
             self._meta.api_name = api_name
 
     def __getattr__(self, name):
+        if name == '__setstate__':
+            raise AttributeError(name)
         try:
             return self.fields[name]
         except KeyError:
@@ -269,43 +276,52 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
 
         return wrapper
 
-    def _handle_500(self, request, exception):
-        the_trace = '\n'.join(traceback.format_exception(*(sys.exc_info())))
-        response_class = http.HttpApplicationError
-        response_code = 500
-
-        NOT_FOUND_EXCEPTIONS = (NotFound, ObjectDoesNotExist, Http404)
-
-        if isinstance(exception, NOT_FOUND_EXCEPTIONS):
-            response_class = HttpResponseNotFound
-            response_code = 404
-
+    def get_response_class_for_exception(self, request, exception):
+        """
+        Can be overridden to customize response classes used for uncaught
+        exceptions. Should always return a subclass of
+        ``django.http.HttpResponse``.
+        """
+        if isinstance(exception, (NotFound, ObjectDoesNotExist, Http404)):
+            return HttpResponseNotFound
+        elif isinstance(exception, UnsupportedSerializationFormat):
+            return http.HttpNotAcceptable
+        elif isinstance(exception, UnsupportedDeserializationFormat):
+            return http.HttpUnsupportedMediaType
         elif isinstance(exception, UnsupportedFormat):
-            response_class = http.HttpBadRequest
-            response_code = 400
+            return http.HttpBadRequest
+
+        return http.HttpApplicationError
+
+    def _handle_500(self, request, exception):
+        the_trace = traceback.format_exception(*sys.exc_info())
+        if six.PY2:
+            the_trace = [
+                six.text_type(line, 'utf-8')
+                for line in the_trace
+            ]
+        the_trace = u'\n'.join(the_trace)
+
+        response_class = self.get_response_class_for_exception(request, exception)
 
         if settings.DEBUG:
             data = {
                 "error_message": sanitize(six.text_type(exception)),
                 "traceback": the_trace,
             }
-            return self.error_response(request, data, response_class=response_class)
+        else:
+            data = {
+                "error_message": getattr(settings, 'TASTYPIE_CANNED_ERROR', "Sorry, this request could not be processed. Please try again later."),
+            }
 
-        # When DEBUG is False, send an error message to the admins (unless it's
-        # a 404, in which case we check the setting).
-
-        if not response_code == 404:
+        if response_class.status_code >= 500:
             log = logging.getLogger('django.request.tastypie')
             log.error('Internal Server Error: %s' % request.path, exc_info=True,
-                      extra={'status_code': response_code, 'request': request})
+                      extra={'status_code': response_class.status_code, 'request': request})
 
         # Send the signal so other apps are aware of the exception.
         got_request_exception.send(self.__class__, request=request)
 
-        # Prep the data going out.
-        data = {
-            "error_message": getattr(settings, 'TASTYPIE_CANNED_ERROR', "Sorry, this request could not be processed. Please try again later."),
-        }
         return self.error_response(request, data, response_class=response_class)
 
     def _build_reverse_url(self, name, args=None, kwargs=None):
@@ -836,12 +852,18 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         if prefix and chomped_uri.startswith(prefix):
             chomped_uri = chomped_uri[len(prefix) - 1:]
 
-        # We mangle the path a bit further & run URL resolution against *only*
-        # the current class. This ought to prevent bad URLs from resolving to
-        # incorrect data.
-        found_at = chomped_uri.rfind(self._meta.resource_name)
-        if found_at == -1:
+        # We know that we are dealing with a "detail" URI
+        # Look for the beginning of object key (last meaningful part of the URI)
+        end_of_resource_name = chomped_uri.rstrip('/').rfind('/')
+        if end_of_resource_name == -1:
             raise NotFound("An incorrect URL was provided '%s' for the '%s' resource." % (uri, self.__class__.__name__))
+        # We mangle the path a bit further & run URL resolution against *only*
+        # the current class (but up to detail key). This ought to prevent bad
+        # URLs from resolving to incorrect data.
+        split_url = chomped_uri.rstrip('/').rsplit('/', 1)[0]
+        if not split_url.endswith('/' + self._meta.resource_name):
+            raise NotFound("An incorrect URL was provided '%s' for the '%s' resource." % (uri, self.__class__.__name__))
+        found_at = chomped_uri.rfind(self._meta.resource_name, 0, end_of_resource_name)
         chomped_uri = chomped_uri[found_at:]
         try:
             for url_resolver in getattr(self, 'urls', []):
@@ -950,12 +972,13 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
                                 setattr(bundle.obj, field_object.attribute, value.obj)
                             except (ValueError, ObjectDoesNotExist):
                                 bundle.related_objects_to_save[field_object.attribute] = value.obj
+                        # not required, not sent
+                        elif field_object.blank and field_name not in bundle.data:
+                            continue
                         elif field_object.null:
                             if not isinstance(getattr(bundle.obj.__class__, field_object.attribute, None), ReverseOneToOneDescriptor):
                                 # only update if not a reverse one to one field
                                 setattr(bundle.obj, field_object.attribute, value)
-                        elif field_object.blank:
-                            continue
 
         return bundle
 
@@ -1047,7 +1070,7 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
                     related_type = 'to_one'
                 data['fields'][field_name]['related_type'] = related_type
                 try:
-                    uri = reverse('api_get_schema', kwargs={
+                    uri = self._build_reverse_url('api_get_schema', kwargs={
                         'api_name': self._meta.api_name,
                         'resource_name': field_object.to_class()._meta.resource_name
                     })
@@ -1417,7 +1440,7 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         Return ``HttpNoContent`` (204 No Content) if
         ``Meta.always_return_data = False`` (default).
 
-        Return ``HttpAccepted`` (200 OK) if
+        Return ``HttpResponse`` (200 OK) with new data if
         ``Meta.always_return_data = True``.
         """
         deserialized = self.deserialize(request, request.body, format=request.META.get('CONTENT_TYPE', 'application/json'))
@@ -1730,8 +1753,11 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         Returns a serialized list of resources based on the identifiers
         from the URL.
 
-        Calls ``obj_get`` to fetch only the objects requested. This method
-        only responds to HTTP GET.
+        Calls ``obj_get_list`` to fetch only the objects requests in
+        a single query. This method only responds to HTTP GET.
+
+        For backward compatibility the method ``obj_get`` is used if
+        ``obj_get_list`` is not implemented.
 
         Should return a HttpResponse (200 OK).
         """
@@ -1746,14 +1772,39 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         not_found = []
         base_bundle = self.build_bundle(request=request)
 
-        for identifier in obj_identifiers:
-            try:
-                obj = self.obj_get(bundle=base_bundle, **{self._meta.detail_uri_name: identifier})
-                bundle = self.build_bundle(obj=obj, request=request)
-                bundle = self.full_dehydrate(bundle, for_list=True)
-                objects.append(bundle)
-            except (ObjectDoesNotExist, Unauthorized):
-                not_found.append(identifier)
+        # We will try to get a queryset from obj_get_list.
+        queryset = None
+
+        try:
+            queryset = self.obj_get_list(bundle=base_bundle).filter(
+                **{self._meta.detail_uri_name + '__in': obj_identifiers})
+        except NotImplementedError:
+            pass
+
+        if queryset is not None:
+            # Fetch the objects from the queryset to a dictionary.
+            objects_dict = {}
+            for obj in queryset:
+                objects_dict[str(getattr(obj, self._meta.detail_uri_name))] = obj
+
+            # Walk the list of identifiers in order and get the objects or feed the not_found list.
+            for identifier in obj_identifiers:
+                if identifier in objects_dict:
+                    bundle = self.build_bundle(obj=objects_dict[identifier], request=request)
+                    bundle = self.full_dehydrate(bundle, for_list=True)
+                    objects.append(bundle)
+                else:
+                    not_found.append(identifier)
+        else:
+            # Use the old way.
+            for identifier in obj_identifiers:
+                try:
+                    obj = self.obj_get(bundle=base_bundle, **{self._meta.detail_uri_name: identifier})
+                    bundle = self.build_bundle(obj=obj, request=request)
+                    bundle = self.full_dehydrate(bundle, for_list=True)
+                    objects.append(bundle)
+                except (ObjectDoesNotExist, Unauthorized):
+                    not_found.append(identifier)
 
         object_list = {
             self._meta.collection_name: objects,
@@ -1782,23 +1833,40 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
 class ModelDeclarativeMetaclass(DeclarativeMetaclass):
     def __new__(cls, name, bases, attrs):
         meta = attrs.get('Meta')
+        if getattr(meta, 'abstract', False):
+            # abstract base classes do nothing on declaration
+            new_class = super(ModelDeclarativeMetaclass, cls).__new__(cls, name, bases, attrs)
+            return new_class
 
-        if meta and hasattr(meta, 'queryset'):
+        # Sanity check: ModelResource needs either a queryset or object_class:
+        if meta and not hasattr(meta, 'queryset') and not hasattr(meta, 'object_class'):
+            msg = "ModelResource (%s) requires Meta.object_class or Meta.queryset"
+            raise ImproperlyConfigured(msg % name)
+
+        if hasattr(meta, 'queryset') and not hasattr(meta, 'object_class'):
             setattr(meta, 'object_class', meta.queryset.model)
 
         new_class = super(ModelDeclarativeMetaclass, cls).__new__(cls, name, bases, attrs)
-        include_fields = getattr(new_class._meta, 'fields', [])
+        specified_fields = getattr(new_class._meta, 'fields', None)
         excludes = getattr(new_class._meta, 'excludes', [])
         field_names = list(new_class.base_fields.keys())
+
+        include_fields = specified_fields
+
+        if include_fields is None:
+            if meta and meta.object_class:
+                include_fields = [f.name for f in meta.object_class._meta.fields]
+            else:
+                include_fields = []
 
         for field_name in field_names:
             if field_name == 'resource_uri':
                 continue
             if field_name in new_class.declared_fields:
                 continue
-            if len(include_fields) and field_name not in include_fields:
+            if specified_fields is not None and field_name not in include_fields:
                 del(new_class.base_fields[field_name])
-            if len(excludes) and field_name in excludes:
+            if field_name in excludes:
                 del(new_class.base_fields[field_name])
 
         # Add in the new fields.
@@ -1829,8 +1897,13 @@ class BaseModelResource(Resource):
         Given a Django model field, return if it should be included in the
         contributed ApiFields.
         """
+        if isinstance(field, ForeignKey):
+            return True
         # Ignore certain fields (related fields).
-        if getattr(field, 'rel'):
+        if hasattr(field, 'remote_field'):
+            if field.remote_field:
+                return True
+        elif getattr(field, 'rel'):
             return True
 
         return False
@@ -1854,7 +1927,7 @@ class BaseModelResource(Resource):
             result = fields.FloatField
         elif internal_type in ('DecimalField',):
             result = fields.DecimalField
-        elif internal_type in ('IntegerField', 'PositiveIntegerField', 'PositiveSmallIntegerField', 'SmallIntegerField', 'AutoField'):
+        elif internal_type in ('IntegerField', 'PositiveIntegerField', 'PositiveSmallIntegerField', 'SmallIntegerField', 'AutoField', 'BigIntegerField'):
             result = fields.IntegerField
         elif internal_type in ('FileField', 'ImageField'):
             result = fields.FileField
@@ -1889,11 +1962,11 @@ class BaseModelResource(Resource):
                 continue
 
             # If field is not present in explicit field listing, skip
-            if fields and f.name not in fields:
+            if f.name not in fields:
                 continue
 
             # If field is in exclude list, skip
-            if excludes and f.name in excludes:
+            if f.name in excludes:
                 continue
 
             if cls.should_skip_field(f):
@@ -2019,14 +2092,6 @@ class BaseModelResource(Resource):
 
         qs_filters = {}
 
-        if getattr(self._meta, 'queryset', None) is not None:
-            # Get the possible query terms from the current QuerySet.
-            query_terms = self._meta.queryset.query.query_terms
-        else:
-            query_terms = QUERY_TERMS
-        if django.VERSION >= (1, 8) and GeometryField:
-            query_terms = query_terms | set(GeometryField.class_lookups.keys())
-
         for filter_expr, value in filters.items():
             filter_bits = filter_expr.split(LOOKUP_SEP)
             field_name = filter_bits.pop(0)
@@ -2036,6 +2101,16 @@ class BaseModelResource(Resource):
                 # It's not a field we know about. Move along citizen.
                 continue
 
+            # Validate filter types other than 'exact' that are supported by the field type
+            try:
+                django_field_name = self.fields[field_name].attribute
+                django_field = self._meta.object_class._meta.get_field(django_field_name)
+                if hasattr(django_field, 'field'):
+                    django_field = django_field.field  # related field
+            except FieldDoesNotExist:
+                raise InvalidFilterError("The '%s' field is not a valid field name" % field_name)
+
+            query_terms = django_field.get_lookups().keys()
             if len(filter_bits) and filter_bits[-1] in query_terms:
                 filter_type = filter_bits.pop()
 
@@ -2174,7 +2249,7 @@ class BaseModelResource(Resource):
             if len(object_list) <= 0:
                 raise self._meta.object_class.DoesNotExist("Couldn't find an instance of '%s' which matched '%s'." % (self._meta.object_class.__name__, stringified_kwargs))
             elif len(object_list) > 1:
-                raise MultipleObjectsReturned("More than '%s' matched '%s'." % (self._meta.object_class.__name__, stringified_kwargs))
+                raise MultipleObjectsReturned("More than one '%s' matched '%s'." % (self._meta.object_class.__name__, stringified_kwargs))
 
             bundle.obj = object_list[0]
             self.authorized_read_detail(object_list, bundle)
@@ -2242,7 +2317,7 @@ class BaseModelResource(Resource):
         if bundle_detail_data is None or (arg_detail_data is not None and str(bundle_detail_data) != str(arg_detail_data)):
             try:
                 lookup_kwargs = self.lookup_kwargs_with_identifiers(bundle, kwargs)
-            except:
+            except:  # noqa
                 # if there is trouble hydrating the data, fall back to just
                 # using kwargs by itself (usually it only contains a "pk" key
                 # and this will work fine.
@@ -2517,6 +2592,9 @@ def convert_post_to_VERB(request, verb):
     Force Django to process the VERB.
     """
     if request.method == verb:
+        if not hasattr(request, '_read_started'):
+            request._read_started = False
+
         if hasattr(request, '_post'):
             del request._post
             del request._files

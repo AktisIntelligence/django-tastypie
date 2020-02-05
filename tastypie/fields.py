@@ -129,13 +129,12 @@ class ApiField(object):
                 current_object = getattr(current_object, attr, None)
 
                 if current_object is None:
-                    if self.has_default():
-                        current_object = self._default
+                    if self.null:
                         # Fall out of the loop, given any further attempts at
                         # accesses will fail miserably.
                         break
-                    elif self.null:
-                        current_object = None
+                    elif self.has_default():
+                        current_object = self._default
                         # Fall out of the loop, given any further attempts at
                         # accesses will fail miserably.
                         break
@@ -395,7 +394,7 @@ class DateTimeField(ApiField):
         if isinstance(value, six.string_types):
             try:
                 year, month, day = value[:10].split('-')
-                hour, minute, second = value[10:18].split(':')
+                hour, minute, second = value[11:19].split(':')
 
                 return make_aware(datetime_safe.datetime(int(year), int(month), int(day), int(hour), int(minute), int(second)))
             except ValueError:
@@ -646,11 +645,11 @@ class RelatedField(ApiField):
         # We also need to check to see if updates are allowed on the FK resource.
         if not obj and unique_keys:
             try:
-                fk_resource.obj_get(fk_bundle, skip_errors=True, **data)
+                fk_resource.obj_get(fk_bundle, **data)
             except (ObjectDoesNotExist, NotFound, TypeError):
                 try:
                     # Attempt lookup by primary key
-                    fk_resource.obj_get(fk_bundle, skip_errors=True, **unique_keys)
+                    fk_resource.obj_get(fk_bundle, **unique_keys)
                 except (ObjectDoesNotExist, NotFound):
                     pass
             except MultipleObjectsReturned:
@@ -746,7 +745,7 @@ class ToOneField(RelatedField):
 
     def contribute_to_class(self, cls, name):
         super(ToOneField, self).contribute_to_class(cls, name)
-        if not self.related_name:
+        if not self.related_name and isinstance(self.attribute, six.string_types):
             related_field = getattr(self._resource._meta.object_class, self.attribute, None)
             if isinstance(related_field, ReverseOneToOneDescriptor):
                 # This is the case when we are writing to a reverse one to one field.
@@ -856,13 +855,12 @@ class ToManyField(RelatedField):
                 except ObjectDoesNotExist:
                     the_m2ms = None
 
-                if not the_m2ms:
+                if the_m2ms is None:
                     break
 
-        if not the_m2ms:
+        if the_m2ms is None:
             if not self.null:
                 raise ApiFieldError("The model '%r' has an empty attribute '%s' and doesn't allow a null value." % (previous_obj, attr))
-
             return []
 
         if isinstance(the_m2ms, models.Manager):

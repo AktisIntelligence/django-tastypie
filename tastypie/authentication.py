@@ -4,6 +4,7 @@ from hashlib import sha1
 import hmac
 import time
 import uuid
+import warnings
 
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -12,7 +13,9 @@ from django.middleware.csrf import _sanitize_token, constant_time_compare
 from django.utils.six.moves.urllib.parse import urlparse
 from django.utils.translation import ugettext as _
 
-from tastypie.compat import get_user_model, get_username_field
+from tastypie.compat import (
+    get_user_model, get_username_field, unsalt_token, is_authenticated
+)
 from tastypie.http import HttpUnauthorized
 
 try:
@@ -73,7 +76,7 @@ class Authentication(object):
 
         try:
             auth_type, data = authorization.split(' ', 1)
-        except:
+        except ValueError:
             raise ValueError('Authorization header must have a space separating auth_type and data.')
 
         if auth_type.lower() != self.auth_type:
@@ -169,11 +172,14 @@ class BasicAuthentication(Authentication):
                 password=password
             )
         else:
+            if not self.require_active and 'django.contrib.auth.backends.ModelBackend' in settings.AUTHENTICATION_BACKENDS:
+                warnings.warn("Authenticating inactive users via ModelUserBackend not supported for Django >= 1.10")
             user = authenticate(username=username, password=password)
 
         if user is None:
             return self._unauthorized()
 
+        # Kept for backwards-compatibility with Django < 1.10
         if not self.check_active(user):
             return False
 
@@ -297,11 +303,12 @@ class SessionAuthentication(Authentication):
         # wrong.
         # We also can't risk accessing ``request.POST``, which will break with
         # the serialized bodies.
+
         if request.method in ('GET', 'HEAD', 'OPTIONS', 'TRACE'):
-            return request.user.is_authenticated()
+            return is_authenticated(request.user)
 
         if getattr(request, '_dont_enforce_csrf_checks', False):
-            return request.user.is_authenticated()
+            return is_authenticated(request.user)
 
         csrf_token = _sanitize_token(request.COOKIES.get(settings.CSRF_COOKIE_NAME, ''))
 
@@ -317,11 +324,13 @@ class SessionAuthentication(Authentication):
                 return False
 
         request_csrf_token = request.META.get('HTTP_X_CSRFTOKEN', '')
+        request_csrf_token = _sanitize_token(request_csrf_token)
 
-        if not constant_time_compare(request_csrf_token, csrf_token):
+        if not constant_time_compare(unsalt_token(request_csrf_token),
+                                     unsalt_token(csrf_token)):
             return False
 
-        return request.user.is_authenticated()
+        return is_authenticated(request.user)
 
     def get_identifier(self, request):
         """
@@ -488,10 +497,11 @@ class OAuthAuthentication(Authentication):
                 return oauth_provider.utils.send_oauth_error(e)
 
             if consumer and token:
-                if not self.check_active(token.user):
+                user = store.get_user_for_access_token(request, oauth_request, token)
+                if not self.check_active(user):
                     return False
 
-                request.user = token.user
+                request.user = user
                 return True
 
             return oauth_provider.utils.send_oauth_error(oauth2.Error(_('You are not allowed to access this resource.')))
@@ -518,7 +528,9 @@ class OAuthAuthentication(Authentication):
         according to OAuth spec) or fall back to ``GET/POST``.
         """
         auth_params = request.META.get("HTTP_AUTHORIZATION", [])
-        return self.is_in(auth_params) or self.is_in(request.REQUEST)
+        return (self.is_in(auth_params)
+                or self.is_in(request.POST)
+                or self.is_in(request.GET))
 
     def validate_token(self, request, consumer, token):
         oauth_server, oauth_request = oauth_provider.utils.initialize_server_request(request)

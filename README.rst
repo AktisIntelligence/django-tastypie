@@ -3,7 +3,7 @@ django-tastypie
 ===============
 
 .. image:: https://readthedocs.org/projects/django-tastypie/badge/
-    :target: https://django-tastypie.readthedocs.org/
+    :target: https://django-tastypie.readthedocs.io/
     :alt: Docs
 
 .. image:: https://travis-ci.org/AktisIntelligence/django-tastypie.svg
@@ -18,13 +18,13 @@ django-tastypie
     :target: https://pypi.python.org/pypi/django-tastypie
     :alt: Version
 
-.. image:: https://img.shields.io/pypi/dm/django-tastypie.svg
+.. image:: https://pypi-badges.global.ssl.fastly.net/svg?package=django-tastypie&timeframe=monthly
     :target: https://pypi.python.org/pypi/django-tastypie
     :alt: Downloads
 
 Creating delicious APIs for Django apps since 2010.
 
-Currently in beta (v0.13.3) but being used actively in production on several
+Currently in beta (v0.14.2) but being used actively in production on several
 sites.
 
 
@@ -35,7 +35,7 @@ Core
 ----
 
 * Python 2.7+ or Python 3.4+
-* Django 1.7 through Django 1.9
+* Django - 1.11 (LTS), 2.0 (LTS) or 2.1 - the last two LTS and the last incremental release are supported.
 * dateutil (http://labix.org/python-dateutil) >= 2.1
 
 Format Support
@@ -43,7 +43,7 @@ Format Support
 
 * XML: lxml 3 (http://lxml.de/) and defusedxml (https://pypi.python.org/pypi/defusedxml)
 * YAML: pyyaml (http://pyyaml.org/)
-* binary plist: biplist (http://explorapp.com/biplist/)
+* binary plist: biplist (https://bitbucket.org/wooster/biplist)
 
 Optional
 --------
@@ -88,7 +88,7 @@ supports all CRUD operations in a RESTful way. JSON/XML/YAML support is already
 there, and it's easy to add related data/authentication/caching.
 
 You can find more in the documentation at
-http://django-tastypie.readthedocs.org/.
+https://django-tastypie.readthedocs.io/.
 
 
 Why Tastypie?
@@ -110,7 +110,7 @@ common reasons for tastypie.
 Reference Material
 ==================
 
-* https://django-tastypie.readthedocs.org/en/latest/
+* https://django-tastypie.readthedocs.io/en/latest/
 * https://github.com/django-tastypie/django-tastypie/tree/master/tests/basic shows
   basic usage of tastypie
 * http://en.wikipedia.org/wiki/REST
