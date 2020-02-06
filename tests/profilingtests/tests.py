@@ -4,6 +4,8 @@ import pstats
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+import six
+
 from core.tests.mocks import MockRequest
 
 from .models import Note
@@ -31,7 +33,7 @@ class ResourceProfilingTestCase(ProfilingTestCase):
 
         user = User.objects.create_user('foo', 'pass')
 
-        for i in xrange(0, 200):
+        for i in six.xrange(0, 200):
             Note.objects.create(author=user, title='Note #%s' % i,
                 slug='note-%s' % i)
 
@@ -41,5 +43,5 @@ class ResourceProfilingTestCase(ProfilingTestCase):
         get_list = self.resource.get_list
         request = self.request
 
-        for i in xrange(0, 50):
+        for i in six.xrange(0, 50):
             get_list(request)
