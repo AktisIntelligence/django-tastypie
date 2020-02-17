@@ -6,20 +6,27 @@ import re
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.utils import six
-from django.utils.encoding import force_text, smart_bytes
+from django.utils.encoding import smart_bytes
 from django.core.serializers import json as djangojson
 
+import six
+
 from tastypie.bundle import Bundle
-from tastypie.exceptions import BadRequest, UnsupportedFormat
+from tastypie.compat import force_str
+from tastypie.exceptions import BadRequest, UnsupportedSerializationFormat,\
+    UnsupportedDeserializationFormat
 from tastypie.utils import format_datetime, format_date, format_time,\
     make_naive
 
+
+import warnings
 try:
-    import defusedxml.lxml as lxml
-    from defusedxml.common import DefusedXmlException
-    from defusedxml.lxml import parse as parse_xml
-    from lxml.etree import Element, tostring, LxmlError
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        import defusedxml.lxml as lxml
+        from defusedxml.common import DefusedXmlException
+        from defusedxml.lxml import parse as parse_xml
+        from lxml.etree import Element, tostring, LxmlError
 except ImportError:
     lxml = None
 
@@ -34,7 +41,7 @@ except ImportError:
     biplist = None
 
 
-XML_ENCODING = re.compile('<\?xml.*?\?>', re.IGNORECASE)
+XML_ENCODING = re.compile(r'<\?xml.*?\?>', re.IGNORECASE)
 
 
 # Ugh & blah.
@@ -67,6 +74,17 @@ if yaml is not None:
             Composer.__init__(self)
             TastypieConstructor.__init__(self)
             Resolver.__init__(self)
+
+
+def _get_default_formats():
+    formats = ['json']
+    if lxml:
+        formats.append('xml')
+    if yaml:
+        formats.append('yaml')
+    if biplist:
+        formats.append('plist')
+    return formats
 
 
 _NUM = 0
@@ -107,14 +125,14 @@ class Serializer(object):
         * jsonp (Disabled by default)
         * xml
         * yaml
-        * plist (see http://explorapp.com/biplist/)
+        * plist (see https://bitbucket.org/wooster/biplist)
 
     It was designed to make changing behavior easy, either by overridding the
     various format methods (i.e. ``to_json``), by changing the
     ``formats/content_types`` options or by altering the other hook methods.
     """
 
-    formats = ['json', 'xml', 'yaml', 'plist']
+    formats = _get_default_formats()
 
     content_types = {
         'json': 'application/json',
@@ -230,8 +248,8 @@ class Serializer(object):
         if self.datetime_formatting == 'iso-8601-strict':
             # Remove microseconds to strictly adhere to iso-8601
             data = (
-                datetime.datetime.combine(datetime.date(1, 1, 1), data) -
-                datetime.timedelta(microseconds=data.microsecond)
+                datetime.datetime.combine(datetime.date(1, 1, 1), data)
+                - datetime.timedelta(microseconds=data.microsecond)
             ).time()
 
         return data.isoformat()
@@ -248,7 +266,7 @@ class Serializer(object):
         method = self._to_methods.get(format)
 
         if method is None:
-            raise UnsupportedFormat("The format indicated '%s' had no available serialization method. Please check your ``formats`` and ``content_types`` on your Serializer." % format)
+            raise UnsupportedSerializationFormat(format)
 
         return method(bundle, options)
 
@@ -264,10 +282,10 @@ class Serializer(object):
         method = self._from_methods.get(format)
 
         if method is None:
-            raise UnsupportedFormat("The format indicated '%s' had no available deserialization method. Please check your ``formats`` and ``content_types`` on your Serializer." % format)
+            raise UnsupportedDeserializationFormat(format)
 
         if isinstance(content, six.binary_type):
-            content = force_text(content)
+            content = force_str(content)
 
         return method(content)
 
@@ -299,7 +317,7 @@ class Serializer(object):
             to_simple = self.to_simple
             return {key: to_simple(val, options) for key, val in six.iteritems(data)}
         if stype == _STR:
-            return force_text(data)
+            return force_str(data)
         if stype == _LIST:
             to_simple = self.to_simple
             return [to_simple(item, options) for item in data]
@@ -356,7 +374,7 @@ class Serializer(object):
                 if isinstance(simple_data, six.text_type):
                     element.text = simple_data
                 else:
-                    element.text = force_text(simple_data)
+                    element.text = force_str(simple_data)
 
         return element
 
