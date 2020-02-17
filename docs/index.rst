@@ -83,8 +83,8 @@ Requirements
 Core
 ----
 
-* Python 2.7+ or Python 3.4+
-* Django 1.7 through Django 1.9
+* Python 2.7+ or Python 3.4+ (Whatever is supported by your version of Django)
+* Django 1.11, 2.2 (LTS releases) or Django 3.0 (latest release)
 * dateutil (http://labix.org/python-dateutil) >= 2.1
 
 Format Support
@@ -92,7 +92,7 @@ Format Support
 
 * XML: lxml 3 (http://lxml.de/) and defusedxml (https://pypi.python.org/pypi/defusedxml)
 * YAML: pyyaml (http://pyyaml.org/)
-* binary plist: biplist (http://explorapp.com/biplist/)
+* binary plist: biplist (https://bitbucket.org/wooster/biplist)
 
 Optional
 --------
@@ -119,7 +119,7 @@ common reasons for tastypie.
 Reference Material
 ==================
 
-* https://django-tastypie.readthedocs.org/en/latest/
+* https://django-tastypie.readthedocs.io/en/latest/
 * https://github.com/django-tastypie/django-tastypie/tree/master/tests/basic shows
   basic usage of tastypie
 * http://en.wikipedia.org/wiki/REST

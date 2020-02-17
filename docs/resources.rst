@@ -160,7 +160,7 @@ consequences of each approach.
 Accessing The Current Request
 =============================
 
-Being able to change behavior based on the current request is a very commmon
+Being able to change behavior based on the current request is a very common
 need. Virtually anywhere within ``Resource/ModelResource``, if a ``bundle`` is
 available, you can access it using ``bundle.request``. This is useful for
 altering querysets, ensuring headers are present, etc.
@@ -232,7 +232,7 @@ in data or massage whatever the field generated.
   The ``FOO`` here is not literal. Instead, it is a placeholder that should be
   replaced with the fieldname in question.
 
-Defining these methods is especially common when denormalizing related data,
+Defining these methods is especially common when deserializing related data,
 providing statistics or filling in unrelated data.
 
 A simple example::
@@ -316,7 +316,7 @@ This method should return a ``bundle``, whether it modifies the existing one or 
 The Hydrate Cycle
 -------------------
 
-Tastypie uses a "hydrate" cycle to take serializated data from the client
+Tastypie uses a "hydrate" cycle to take serialized data from the client
 and turn it into something the data model can use. This is the reverse process
 from the ``dehydrate`` cycle. In fact, by default, Tastypie's serialized data
 should be "round-trip-able", meaning the data that comes out should be able to
@@ -592,6 +592,9 @@ The inner ``Meta`` class allows for class-level configuration of how the
   Keys should be the fieldnames as strings while values should be a list of
   accepted filter types.
 
+  This also restricts what fields can be filtered on when manually
+  calling ``obj_get`` and ``obj_get_list``.
+
 ``ordering``
 ------------
 
@@ -625,11 +628,23 @@ The inner ``Meta`` class allows for class-level configuration of how the
   the ``Meta`` class is instantiated). This especially affects things that
   are date/time related. Please see the :doc:`cookbook` for a way around this.
 
+``abstract``
+------------
+
+  In concrete ``Resource`` and ``ModelResource`` instances, either
+  ``object_class`` or ``queryset`` is required.
+  If you wish to build an abstract base ``Resource`` class, you can bypass
+  this requirement by setting ``abstract`` to ``True``.
+
 ``fields``
 ----------
 
   Controls what introspected fields the ``Resource`` should include.
-  A whitelist of fields. Default is ``[]``.
+  A whitelist of fields. Default is ``None``.
+
+  The default value of ``None`` means that all Django fields will be
+  introspected. In order to specify that no fields should be introspected,
+  use ``[]``
 
 ``excludes``
 ------------
@@ -719,11 +734,11 @@ filter the queryset before processing a request::
     from haystack.query import SearchQuerySet
 
     class MyResource(Resource):
-        def build_filters(self, filters=None):
+        def build_filters(self, filters=None, **kwargs):
             if filters is None:
                 filters = {}
 
-            orm_filters = super(MyResource, self).build_filters(filters)
+            orm_filters = super(MyResource, self).build_filters(filters, **kwargs)
 
             if "q" in filters:
                 sqs = SearchQuerySet().auto_query(filters['q'])
@@ -767,6 +782,14 @@ as handling exceptions better.
 Note that if ``BadRequest`` or an exception with a ``response`` attr are seen,
 there is special handling to either present a message back to the user or
 return the response traveling with the exception.
+
+``get_response_class_for_exception``
+------------------------------------
+
+.. method:: Resource.get_response_class_for_exception(self, request, exception)
+
+Can be overridden to customize response classes used for uncaught exceptions.
+Should always return a subclass of``django.http.HttpResponse``.
 
 ``base_urls``
 -------------
@@ -847,10 +870,21 @@ Mostly a hook, this uses the ``Serializer`` from ``Resource._meta``.
 
 .. method:: Resource.alter_list_data_to_serialize(self, request, data)
 
-A hook to alter list data just before it gets serialized & sent to the user.
+A hook to alter list data just before it gets serialized & sent to the user. 
 
 Useful for restructuring/renaming aspects of the what's going to be
-sent.
+sent. Occurs after any dehydration has by applied.
+
+As such this is a useful place to apply modifications which affect many
+list elements.
+
+Example::
+
+    def alter_list_data_to_serialize(self, request, data):
+        bar = some_expensive_call()
+        for obj in data['objects']:
+            obj.foo = bar
+        return data
 
 Should accommodate for a list of objects, generally also including
 meta data.
@@ -1099,7 +1133,7 @@ The ``for_list`` parameter indicates the style of response being prepared:
       be called once for each object requested.
     - ``False`` indicates a response showing the details for an item
 
-This method is responsible for invoking the the :meth:`dehydrate` method of
+This method is responsible for invoking the :meth:`dehydrate` method of
 all the fields in the resource. Additionally, it calls
 :meth:`Resource.dehydrate`.
 
