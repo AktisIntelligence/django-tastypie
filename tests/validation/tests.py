@@ -157,7 +157,6 @@ class PutDetailNestResouceValidationTestCase(TestCaseWithFixture):
         self.assertIsNone(note['annotated'])
         self.assertEqual('test-title-no-annotation-2', note['slug'])
 
-
 @override_settings(ROOT_URLCONF='validation.api.urls')
 class PutListNestResouceValidationTestCase(TestCaseWithFixture):
     def test_valid_data(self):
