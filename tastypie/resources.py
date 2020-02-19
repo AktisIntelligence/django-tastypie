@@ -1831,6 +1831,7 @@ class Resource(six.with_metaclass(DeclarativeMetaclass)):
         """
         pass
 
+
 class ModelDeclarativeMetaclass(DeclarativeMetaclass):
     def __new__(cls, name, bases, attrs):
         meta = attrs.get('Meta')

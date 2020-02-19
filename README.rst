@@ -6,7 +6,7 @@ django-tastypie
     :target: https://django-tastypie.readthedocs.io/
     :alt: Docs
 
-.. image:: https://travis-ci.org/AktisIntelligence/django-tastypie.svg
+.. image:: https://travis-ci.org/AktisIntelligence/django-tastypie.svg?branch=aktis-master
     :target: https://travis-ci.org/AktisIntelligence/django-tastypie
     :alt: CI
 
