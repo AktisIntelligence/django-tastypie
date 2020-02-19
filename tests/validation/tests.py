@@ -232,7 +232,6 @@ class PutListNestResouceValidationTestCase(TestCaseWithFixture):
                 'annotated': {'annotations': 'This is the third annotations'},
                 'user': {'id': 1}
             }
-
         ]})
 
         resp = self.client.put('/api/v1/notes/', data=data, content_type='application/json')
